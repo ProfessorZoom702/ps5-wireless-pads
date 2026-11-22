@@ -236,6 +236,11 @@ footer p { margin: 0 24px 0 0; color: var(--mute); font-size: 13px; max-width: 6
       </div>
       <p class="note" id="reason"></p>
       <div id="retryRow" hidden style="margin-top:14px"><button class="btn" id="retry" data-i18n="retryBt">Retry Bluetooth</button></div>
+      <div style="margin-top:18px">
+        <p class="label" data-i18n="gameFirstTitle">Game input</p>
+        <p class="note" data-i18n="gameFirstNote">If a game ignores PadBridge, this disconnects same-user controllers ahead of it. Press PS on a disconnected controller to reconnect it.</p>
+        <button class="btn cut" id="makeFirst" data-i18n="makeFirst">Make PadBridge first</button>
+      </div>
     </div>
     <div class="panel pair">
       <p class="label" data-i18n="pairing">Pairing</p>
@@ -293,6 +298,13 @@ zh:{"language":"语言","langSet":"语言：{name}","connecting":"正在连接�
 it:{"language":"Lingua","langSet":"Lingua: {name}","connecting":"Connessione…","status":"Stato","bluetooth":"Bluetooth","connected":"Connessi","paired":"Associati","tipUsers":"Gioca con il tuo utente principale e premi {ps} sulla scheda del controller per dargli il focus della console.","retryBt":"Riprova Bluetooth","pairing":"Associazione","pairIdle":"Premi il pulsante, poi metti il controller in modalità di associazione. Tieni spento il DualSense durante l'associazione.","pairBtn":"Associa un controller (60 s)","connectedTitle":"Controller connessi","upTo4":"Fino a 4","pairedTitle":"Controller associati","switchOn":"Accendine uno per connetterlo","log":"Registro","show":"Mostra","hide":"Nascondi","loading":"Caricamento…","refresh":"Aggiorna","footer":"Chiudendo questa pagina PadBridge resta attivo. Arrestalo prima di caricare di nuovo l'ELF: i controller si disconnettono e il Bluetooth resta com'era.","stopBtn":"Arresta PadBridge (avanzato)","pressPs":"Premi PS","rumble":"Vibrazione","forget":"Dimentica","psTitle":"Come tenere premuto PS: dà a questo controller il controllo della console","rumbleTitle":"Fa vibrare questo controller per mezzo secondo","psDone":"PS premuto su P{n}","rumbleDone":"Vibrazione inviata a P{n}","noRumble":"Questo controller non può vibrare","sure":"Sicuro?","forgotten":"Dimenticato - associalo di nuovo per usarlo","failed":"Non ha funzionato","battery":"Batteria {n}%","charging":"in carica","noBattery":"Batteria non indicata","noPads":"Nessun controller connesso. Accendine uno associato o associane uno nuovo.","nothingPaired":"Ancora nessun controller associato.","offlinePad":"Controller associato · offline","unknownId":"id sconosciuto","pairingNow":"Associazione…","running":"In esecuzione","noBt":"Nessun Bluetooth","startingBt":"Avvio del Bluetooth…","ready":"Pronto","failedBt":"Errore","starting":"Avvio","rNochip":"Il chip Bluetooth non risponde. I dettagli sono nel registro (righe 'diag').","rLost":"La connessione Bluetooth è stata persa. Premi Riprova Bluetooth.","rNovpad":"Su questo sistema non è possibile creare controller virtuali (vedi il registro). Il Bluetooth non è stato toccato.","searching":"Ricerca… mancano {n} s. Metti ora il controller in modalità di associazione.","pairingSec":"Associazione… {n} s","hotkey":"Scorciatoia: {c}","pairStarted":"Associazione per 60 s - metti il controller in modalità di associazione","retrying":"Nuovo tentativo Bluetooth…","logError":"Impossibile leggere il registro.","empty":"(vuoto)","tapStop":"Tocca di nuovo per arrestare","stopping":"PadBridge si sta arrestando","stoppingShort":"Arresto…","offline":"Offline"},
 he:{"language":"שפה","langSet":"שפה: {name}","connecting":"מתחבר…","status":"סטטוס","bluetooth":"בלוטות׳","connected":"מחוברים","paired":"מצומדים","tipUsers":"שחק עם המשתמש הראשי ולחץ {ps} בכרטיס הבקר כדי להעביר אליו את המיקוד בקונסולה.","retryBt":"נסה שוב בלוטות׳","pairing":"צימוד","pairIdle":"לחץ על הכפתור, ואז העבר את הבקר למצב צימוד. השאר את הדואלסנס כבוי בזמן הצימוד.","pairBtn":"צימוד בקר (60 שנ׳)","connectedTitle":"בקרים מחוברים","upTo4":"עד 4","pairedTitle":"בקרים מצומדים","switchOn":"הדלק אחד כדי לחבר אותו","log":"יומן","show":"הצג","hide":"הסתר","loading":"טוען…","refresh":"רענון","footer":"סגירת העמוד משאירה את PadBridge רץ. עצור אותו לפני טעינת ה-ELF שוב: הבקרים מתנתקים והבלוטות׳ נשאר כמו שהיה.","stopBtn":"עצור את PadBridge (מתקדם)","pressPs":"לחץ PS","rumble":"רטט","forget":"שכח","psTitle":"כמו לחיצה ארוכה על PS: מעביר לבקר הזה את השליטה בקונסולה","rumbleTitle":"מרטיט את הבקר הזה לחצי שנייה","psDone":"PS נלחץ ב-P{n}","rumbleDone":"רטט נשלח ל-P{n}","noRumble":"לבקר הזה אין רטט","sure":"בטוח?","forgotten":"נשכח - צמד שוב כדי להשתמש","failed":"זה לא הצליח","battery":"סוללה {n}%","charging":"בטעינה","noBattery":"אין דיווח על סוללה","noPads":"אין בקר מחובר. הדלק בקר מצומד, או צמד בקר חדש.","nothingPaired":"עדיין אין כלום מצומד.","offlinePad":"בקר מצומד · לא מחובר","unknownId":"מזהה לא ידוע","pairingNow":"מצמד…","running":"רץ","noBt":"אין בלוטות׳","startingBt":"מפעיל בלוטות׳…","ready":"מוכן","failedBt":"נכשל","starting":"מתחיל","rNochip":"שבב הבלוטות׳ לא עונה. הפרטים ביומן (שורות 'diag').","rLost":"חיבור הבלוטות׳ נקטע. לחץ «נסה שוב בלוטות׳».","rNovpad":"לא ניתן ליצור בקרי משחק וירטואליים במערכת הזו (ראה יומן). הבלוטות׳ לא נגע.","searching":"מחפש… נשארו {n} שנ׳. העבר את הבקר למצב צימוד עכשיו.","pairingSec":"מצמד… {n} שנ׳","hotkey":"קיצור: {c}","pairStarted":"צימוד ל-60 שנ׳ - העבר את הבקר למצב צימוד","retrying":"מנסה שוב בלוטות׳…","logError":"לא ניתן לקרוא את היומן.","empty":"(ריק)","tapStop":"לחץ שוב כדי לעצור","stopping":"PadBridge נעצר","stoppingShort":"עוצר…","offline":"לא מחובר"}
 };
+I18N.en.gameFirstTitle = "Game input";
+I18N.en.gameFirstNote = "If a game ignores PadBridge, this disconnects same-user controllers ahead of it. Press PS on a disconnected controller to reconnect it.";
+I18N.en.makeFirst = "Make PadBridge first";
+I18N.en.makeFirstConfirm = "Disconnect controller(s)? Click again";
+I18N.en.makeFirstDone = "Controller order updated";
+I18N.en.makeFirstAlready = "PadBridge is already first";
+I18N.en.makeFirstFailed = "Could not verify controller order; see the log.";
 var LS_LANG = "padbridge-lang", LANG = "en", langFromConsole = false, lastState = null;
 try { var saved = localStorage.getItem(LS_LANG); if (I18N[saved]) LANG = saved; } catch (e) {}
 function t(k, v) {
@@ -636,6 +648,7 @@ function render(s) {
     ? t("searching", { n: s.pairing }) : t("pairIdle");
   $("pair").disabled = s.pairing > 0 || bt !== "ok";
   $("pair").textContent = s.pairing > 0 ? t("pairingSec", { n: s.pairing }) : t("pairBtn");
+  $("makeFirst").disabled = bt !== "ok" || !s.pads.length;
   $("padsHint").textContent = s.combo ? t("hotkey", { c: s.combo }) : t("upTo4");
   renderPads(s.pads);
   renderPaired(s.paired, s.pads);
@@ -668,6 +681,11 @@ function loadLog() {
 
 $("pair").onclick = function () { act("/api/pair", t("pairStarted")); };
 $("retry").onclick = function () { act("/api/retry", t("retrying")); };
+armed($("makeFirst"), "makeFirstConfirm", function () {
+  api("POST", "/api/make-first").then(function (result) {
+    toast(result.alreadyFirst ? t("makeFirstAlready") : t("makeFirstDone"));
+  }, function () { toast(t("makeFirstFailed")); }).then(refresh);
+});
 $("logRefresh").onclick = loadLog;
 $("logBox").addEventListener("toggle", function () { if ($("logBox").open) loadLog(); });
 armed($("stop"), "tapStop", function () {

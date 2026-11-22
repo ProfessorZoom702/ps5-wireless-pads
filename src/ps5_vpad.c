@@ -85,6 +85,7 @@ int32_t  kernel_get_ucred_caps(pid_t pid, uint8_t caps[16]);
 int32_t  kernel_set_ucred_caps(pid_t pid, const uint8_t caps[16]);
 
 typedef int32_t (*mbus_bind_fn)(uint64_t device_id, int32_t user);
+typedef int32_t (*mbus_disconnect_fn)(uint64_t device_id);
 
 typedef struct {
     char reserved[45];
@@ -112,6 +113,7 @@ typedef struct {
 } vslot;
 
 static mbus_bind_fn g_bind;
+static mbus_disconnect_fn g_disconnect;
 static int g_ready;                         /* vpad_init succeeded */
 static int32_t g_user = -1;
 static vslot g_slot[HOST_MAX_PADS];
@@ -398,7 +400,10 @@ int vpad_init(void)
      * or scePadInit can fault on an unresolved import. */
     for (i = 0; i < sizeof mbus / sizeof mbus[0] && !lib; i++)
         lib = dlopen(mbus[i], RTLD_NOW | RTLD_GLOBAL);
-    if (lib) g_bind = (mbus_bind_fn)dlsym(lib, "sceMbusBindDeviceWithUserId");
+    if (lib) {
+        g_bind = (mbus_bind_fn)dlsym(lib, "sceMbusBindDeviceWithUserId");
+        g_disconnect = (mbus_disconnect_fn)dlsym(lib, "sceMbusDisconnectDevice");
+    }
     if (!g_bind) {
         log_line("vpad: libSceMbus not available, refusing to touch libScePad");
         return 0;
@@ -418,6 +423,153 @@ int vpad_init(void)
     log_line("vpad: main user %#x", (unsigned)g_user);
     g_ready = 1;
     return 1;
+}
+
+/* The game-side pad API opens the first controller for a user. On firmware
+ * 12.70, the PadBridge log can contain the console's latest [CIM] Pad table.
+ * Only act when that table names this exact live virtual pad and user; a stale
+ * or incomplete table must never cause another device to be disconnected. */
+#define CIM_LOG_TAIL 16384
+#define CIM_PAD_MAX  4
+
+typedef struct {
+    int index;
+    uint64_t device;
+    uint64_t user;
+} cim_pad;
+
+static int latest_cim_pads(const char *path, cim_pad pads[CIM_PAD_MAX])
+{
+    char buf[CIM_LOG_TAIL + 1];
+    FILE *f;
+    long size, start;
+    size_t n;
+    char *p, *header = NULL, *end;
+    int count = 0;
+
+    if (!path || !*path || !(f = fopen(path, "rb"))) return -1;
+    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 0) {
+        fclose(f);
+        return -1;
+    }
+    start = size > CIM_LOG_TAIL ? size - CIM_LOG_TAIL : 0;
+    if (fseek(f, start, SEEK_SET) != 0) {
+        fclose(f);
+        return -1;
+    }
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    for (p = buf; (p = strstr(p, "[CIM]  Pad")) != NULL; p++) {
+        end = strchr(p, '\n');
+        if (end && strstr(p, "deviceId") && strstr(p, "userId") &&
+            strstr(p, "deviceId") < end && strstr(p, "userId") < end)
+            header = p;
+    }
+    if (!header || !(p = strchr(header, '\n'))) return -1;
+    p++;
+
+    while (*p && count < CIM_PAD_MAX) {
+        char row[256];
+        char *tag;
+        int index;
+        unsigned long long device, user;
+        size_t len;
+
+        end = strchr(p, '\n');
+        if (!end) break;
+        len = (size_t)(end - p);
+        if (len >= sizeof row) break;
+        memcpy(row, p, len);
+        row[len] = '\0';
+        tag = strstr(row, "[CIM]");
+        if (!tag || sscanf(tag + 5, " [%d] 0x%llx 0x%llx", &index, &device, &user) != 3)
+            break;
+        if (index < 0 || index >= CIM_PAD_MAX) break;
+        pads[count].index = index;
+        pads[count].device = (uint64_t)device;
+        pads[count].user = (uint64_t)user;
+        count++;
+        p = end + 1;
+    }
+    return count;
+}
+
+/* Explicit web action: disconnect only same-user controller entries that the
+ * latest verified CIM table places before PadBridge. Pressing PS on those
+ * physical controllers reconnects them. Returns 0 if already first, the count
+ * disconnected on success, or a negative error without guessing device IDs. */
+int vpad_make_first(const char *log_path, uint64_t *first_device, unsigned *disconnected)
+{
+    cim_pad pads[CIM_PAD_MAX];
+    vslot *v = NULL;
+    int i, n, own = -1, had_raised, count = 0, result = 0;
+    uint64_t target = 0;
+
+    if (first_device) *first_device = 0;
+    if (disconnected) *disconnected = 0;
+    if (!g_ready) return -1;
+    for (i = 0; i < HOST_MAX_PADS; i++)
+        if (g_slot[i].st == VP_READY) { v = &g_slot[i]; break; }
+    if (!v) {
+        log_line("vpad: make-first skipped: no live virtual pad");
+        return -1;
+    }
+    if (!g_disconnect) {
+        log_line("vpad: make-first skipped: sceMbusDisconnectDevice is unavailable");
+        return -2;
+    }
+    n = latest_cim_pads(log_path, pads);
+    if (n <= 0) {
+        log_line("vpad: make-first skipped: no recent CIM Pad table in the log");
+        return -3;
+    }
+    for (i = 0; i < n; i++)
+        if (pads[i].device == v->dev && pads[i].user == (uint32_t)g_user)
+            own = pads[i].index;
+    if (own < 0) {
+        log_line("vpad: make-first skipped: latest CIM table does not identify our device %#llx for user %#x",
+                 (unsigned long long)v->dev, (unsigned)g_user);
+        return -3;
+    }
+    for (i = 0; i < n; i++)
+        if (pads[i].index < own && pads[i].user == (uint32_t)g_user &&
+            pads[i].device && pads[i].device != UINT64_MAX && pads[i].device != v->dev)
+            if (!target) target = pads[i].device;
+    if (!target) {
+        log_line("vpad: make-first: device %#llx is already first for user %#x",
+                 (unsigned long long)v->dev, (unsigned)g_user);
+        return 0;
+    }
+
+    had_raised = g_raised;
+    if (!vpad_creds_raise()) {
+        log_line("vpad: make-first failed: could not raise credentials");
+        return -4;
+    }
+    for (i = 0; i < n; i++) {
+        int32_t r;
+        if (pads[i].index >= own || pads[i].user != (uint32_t)g_user ||
+            !pads[i].device || pads[i].device == UINT64_MAX || pads[i].device == v->dev)
+            continue;
+        r = g_disconnect(pads[i].device);
+        log_line("vpad: make-first disconnect preceding device %#llx: %#x",
+                 (unsigned long long)pads[i].device, (unsigned)r);
+        if (r != 0) { result = -5; break; }
+        if (!count) target = pads[i].device;
+        count++;
+    }
+    if (!had_raised && !vpad_creds_restore()) {
+        log_line("vpad: make-first warning: could not restore original credentials");
+        if (result == 0) result = -6;
+    }
+    if (count && result == 0)
+        log_line("vpad: make-first disconnected %d preceding same-user controller(s); PadBridge device is %#llx",
+                 count, (unsigned long long)v->dev);
+    if (first_device) *first_device = target;
+    if (disconnected) *disconnected = (unsigned)count;
+    return result == 0 ? count : result;
 }
 
 /* ---- virtual pads ----------------------------------------------------------- */

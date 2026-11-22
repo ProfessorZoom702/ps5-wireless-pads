@@ -2,6 +2,7 @@
 #include "i18n.h"
 #include "log.h"
 #include "profiles.h"
+#include "ps5_vpad.h"
 #include "util.h"
 
 #include <sys/socket.h>
@@ -300,6 +301,21 @@ static void handle(web_t *w, int fd, char *req)
         host_pair(h, 60);
         log_line("web: pairing started");
         respond_text(fd, 200, "{\"ok\":true}");
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/make-first") == 0) {
+        uint64_t device = 0;
+        unsigned disconnected = 0;
+        int result = vpad_make_first(w->cfg.log_path, &device, &disconnected);
+        if (result < 0) {
+            respond_text(fd, 409, "{\"error\":\"controller order could not be verified; see PadBridge log\"}");
+        } else if (result == 0) {
+            respond_text(fd, 200, "{\"ok\":true,\"alreadyFirst\":true}");
+        } else {
+            char body[160];
+            snprintf(body, sizeof body,
+                     "{\"ok\":true,\"alreadyFirst\":false,\"disconnected\":%u,\"firstDevice\":\"0x%llx\"}",
+                     disconnected, (unsigned long long)device);
+            respond_text(fd, 200, body);
+        }
     } else if (strcmp(method, "POST") == 0 && strncmp(path, "/api/forget?addr=", 17) == 0 && h) {
         unsigned char a[6];
         if (!parse_addr(path + 17, a)) respond_text(fd, 400, "{\"error\":\"address\"}");

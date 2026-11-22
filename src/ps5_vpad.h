@@ -32,6 +32,11 @@ int  vpad_add(int slot);
 void vpad_poll(long now);
 int  vpad_live(int slot);
 
+/* Explicitly make a live PadBridge virtual pad the first controller for its
+ * user by disconnecting only preceding same-user entries in a verified CIM
+ * table. Pressing PS on a disconnected physical controller reconnects it. */
+int vpad_make_first(const char *log_path, uint64_t *first_device, unsigned *disconnected);
+
 void vpad_update(int slot, const pad_state *st);
 
 /* Holds PS on the virtual pad for `ms` milliseconds (the menu's PS button).
