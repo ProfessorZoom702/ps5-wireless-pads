@@ -1,0 +1,66 @@
+--- a/src/ps5_apps.c
++++ b/src/ps5_apps.c
+@@ -2,6 +2,7 @@
+ #include "launcher.h"
+ #include "log.h"
+ 
++#include <dlfcn.h>
+ #include <stddef.h>
+ #include <sys/stat.h>
+ 
+@@ -10,13 +11,21 @@
+ 
+ int sceAppInstUtilInitialize(void);
+ int sceAppInstUtilTerminate(void);
+-int sceAppInstUtilAppInstallTitleDir(const char *title_id, const char *dir, void *reserved);
+ int sceAppInstUtilAppUnInstall(const char *title_id);
++/* Optional: absent on some firmware, which must not block payload startup. */
++typedef int (*install_title_dir_fn)(const char *title_id, const char *dir, void *reserved);
+ 
+ int apps_install_launcher(void)
+ {
+     struct stat st;
+     int w, r;
++    install_title_dir_fn install;
++
++    install = (install_title_dir_fn)dlsym(RTLD_DEFAULT, "sceAppInstUtilAppInstallTitleDir");
++    if (!install) {
++        log_line("launcher: sceAppInstUtilAppInstallTitleDir unavailable on this firmware; skipping tile");
++        return -1;
++    }
+ 
+     w = launcher_write(LAUNCHER_APP_ROOT, icon_png_data, icon_png_data_len);
+     if (w < 0) {
+@@ -31,7 +40,7 @@
+         log_line("launcher: sceAppInstUtilInitialize -> %#x", (unsigned)r);
+         return -1;
+     }
+-    r = sceAppInstUtilAppInstallTitleDir(LAUNCHER_TITLE_ID, LAUNCHER_APP_ROOT "/", 0);
++    r = install(LAUNCHER_TITLE_ID, LAUNCHER_APP_ROOT "/", 0);
+     sceAppInstUtilTerminate();
+     log_line("launcher: installed %s in the media row -> %#x", LAUNCHER_TITLE_ID, (unsigned)r);
+     return r == 0 ? 0 : -1;
+--- a/src/version.h
++++ b/src/version.h
+@@ -7,7 +7,7 @@
+ 
+ /* One #define line only: ps5.mk reads the version from it. */
+ #ifndef PADBRIDGE_VERSION
+-#define PADBRIDGE_VERSION "0.2.0-beta"
++#define PADBRIDGE_VERSION "0.2.0-beta.1"
+ #endif
+ 
+ #endif
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,10 @@
+ version is set in `src/version.h` and is also in the first line of the log, in
+ the start-up notification, on the web page, and in the binary
+ (`strings PadBridge-PS5-*.elf | grep padbridge-version`).
++
++## 0.2.0-beta.1
++
++- Resolve `sceAppInstUtilAppInstallTitleDir` at runtime. If the current firmware does not export it, skip launcher-tile creation and continue startup.
+ 
+ ## 0.2.0-beta
+ 

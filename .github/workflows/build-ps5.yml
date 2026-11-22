@@ -1,0 +1,88 @@
+name: Build PadBridge PS5 payload
+
+# Builds the PS5 ELF with Codex's 12.70 fix applied (patches/*.patch),
+# then checks the result before you ever send it to the console.
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (LLVM 18, make, xxd)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm llvm-dev make xxd file git wget \
+            cmake meson pkg-config python3 python3-pyelftools socat
+          clang --version
+
+      - name: Build and install ps5-payload-sdk
+        run: |
+          git clone --depth 1 https://github.com/ps5-payload-dev/sdk "$RUNNER_TEMP/sdk"
+          make -C "$RUNNER_TEMP/sdk" DESTDIR="$RUNNER_TEMP/sdk/_prefix" install
+          echo "PS5_PAYLOAD_SDK=$RUNNER_TEMP/sdk/_prefix" >> "$GITHUB_ENV"
+          echo "SDK commit: $(git -C "$RUNNER_TEMP/sdk" rev-parse HEAD)"
+
+      - name: Apply patches
+        run: |
+          for p in patches/*.patch; do
+            if git apply --reverse --check "$p" 2>/dev/null; then
+              echo "already applied: $p"
+            else
+              git apply -p1 "$p" && echo "applied: $p"
+            fi
+          done
+          git --no-pager diff --stat
+
+      - name: Host unit tests (informational)
+        continue-on-error: true
+        run: make test
+
+      - name: Build the ELF
+        run: |
+          # Force the embedded web page and icon to be regenerated with xxd.
+          touch web/index.html assets/icon0.png
+          make ps5 PS5_PAYLOAD_SDK="$PS5_PAYLOAD_SDK"
+          ls -l dist/
+
+      - name: Verify the ELF
+        run: |
+          VERSION=$(sed -n 's/^#define PADBRIDGE_VERSION "\(.*\)"/\1/p' src/version.h)
+          ELF="dist/PadBridge-PS5-${VERSION}.elf"
+          test -f "$ELF" || { echo "::error::$ELF was not produced"; exit 1; }
+          file "$ELF"
+
+          llvm-nm -D --undefined-only "$ELF" | awk '{print $NF}' | sort > imports.txt
+          echo "Undefined dynamic symbols: $(wc -l < imports.txt)"
+          if grep -qx 'sceAppInstUtilAppInstallTitleDir' imports.txt; then
+            echo "::error::sceAppInstUtilAppInstallTitleDir is still a hard import - the fix did not take"
+            exit 1
+          fi
+          echo "OK: sceAppInstUtilAppInstallTitleDir is not a hard import"
+
+          # The web page must be embedded (an empty page means xxd was missing).
+          LEN=$(grep -c '0x' src/web_page.c || true)
+          if [ "$LEN" -lt 10 ]; then
+            echo "::error::src/web_page.c looks empty - web page not embedded"
+            exit 1
+          fi
+          strings "$ELF" | grep -qi '<html' || { echo "::error::no HTML found in the ELF"; exit 1; }
+          echo "OK: web page embedded"
+
+          strings "$ELF" | grep -i 'padbridge-version' || true
+          sha256sum "$ELF" | tee "$ELF.sha256"
+          cp imports.txt dist/imports.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PadBridge-PS5-elf
+          path: |
+            dist/PadBridge-PS5-*beta.1.elf
+            dist/PadBridge-PS5-*beta.1.elf.sha256
+            dist/imports.txt
+            src/web_page.c
+          if-no-files-found: error
