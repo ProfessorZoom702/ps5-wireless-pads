@@ -425,11 +425,11 @@ int vpad_init(void)
     return 1;
 }
 
-/* The game-side pad API opens the first controller for a user. On firmware
- * 12.70, the PadBridge log can contain the console's latest [CIM] Pad table.
- * Only act when that table names this exact live virtual pad and user; a stale
- * or incomplete table must never cause another device to be disconnected. */
-#define CIM_LOG_TAIL 16384
+/* The game-side pad API opens the first controller for a user. The log's
+ * latest [CIM] Pad table can be just before a newly bound vpad, so read up to
+ * the rotated-log limit and allow that exact successful bind to identify the
+ * next free index. A stale or incomplete table must not drive disconnections. */
+#define CIM_LOG_TAIL (1u << 20) /* log.c rotates at 1 MiB */
 #define CIM_PAD_MAX  4
 
 typedef struct {
@@ -438,15 +438,18 @@ typedef struct {
     uint64_t user;
 } cim_pad;
 
-static int latest_cim_pads(const char *path, cim_pad pads[CIM_PAD_MAX])
+static int latest_cim_pads(const char *path, cim_pad pads[CIM_PAD_MAX],
+                           const char *binding_record, int *inferred_own)
 {
-    char buf[CIM_LOG_TAIL + 1];
+    char *buf;
     FILE *f;
     long size, start;
     size_t n;
-    char *p, *header = NULL, *end;
+    char *p, *header = NULL, *end, *bound;
+    long table_ms = -1, bound_ms = -1;
     int count = 0;
 
+    if (inferred_own) *inferred_own = -1;
     if (!path || !*path || !(f = fopen(path, "rb"))) return -1;
     if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 0) {
         fclose(f);
@@ -457,7 +460,11 @@ static int latest_cim_pads(const char *path, cim_pad pads[CIM_PAD_MAX])
         fclose(f);
         return -1;
     }
-    n = fread(buf, 1, sizeof buf - 1, f);
+    if (!(buf = (char *)malloc((size_t)(size - start) + 1))) {
+        fclose(f);
+        return -1;
+    }
+    n = fread(buf, 1, (size_t)(size - start), f);
     fclose(f);
     buf[n] = '\0';
 
@@ -467,8 +474,12 @@ static int latest_cim_pads(const char *path, cim_pad pads[CIM_PAD_MAX])
             strstr(p, "deviceId") < end && strstr(p, "userId") < end)
             header = p;
     }
-    if (!header || !(p = strchr(header, '\n'))) return -1;
+    if (!header || !(p = strchr(header, '\n'))) {
+        free(buf);
+        return -1;
+    }
     p++;
+    (void)sscanf(p, "[%ld]", &table_ms);
 
     while (*p && count < CIM_PAD_MAX) {
         char row[256];
@@ -493,6 +504,33 @@ static int latest_cim_pads(const char *path, cim_pad pads[CIM_PAD_MAX])
         count++;
         p = end + 1;
     }
+    /* When the latest table was printed while replacing a previous virtual
+     * pad, it can precede the current successful bind and therefore cannot
+     * list the new device yet. Infer its next free index only when that exact
+     * current bind is logged after this table. */
+    if (count > 0 && binding_record && inferred_own &&
+        (bound = strstr(header, binding_record)) != NULL) {
+        char *line_start = bound;
+        int index;
+        while (line_start > header && line_start[-1] != '\n') line_start--;
+        if (sscanf(line_start, "[%ld]", &bound_ms) == 1 &&
+            table_ms >= 0 && bound_ms >= table_ms) {
+            for (index = 0; index < CIM_PAD_MAX; index++) {
+                int j, occupied = 0;
+                for (j = 0; j < count; j++)
+                    if (pads[j].index == index && pads[j].device &&
+                        pads[j].device != UINT64_MAX && pads[j].user != UINT32_MAX) {
+                        occupied = 1;
+                        break;
+                    }
+                if (!occupied) {
+                    *inferred_own = index;
+                    break;
+                }
+            }
+        }
+    }
+    free(buf);
     return count;
 }
 
@@ -504,14 +542,16 @@ int vpad_make_first(const char *log_path, uint64_t *first_device, unsigned *disc
 {
     cim_pad pads[CIM_PAD_MAX];
     vslot *v = NULL;
-    int i, n, own = -1, had_raised, count = 0, result = 0;
+    int i, n, own = -1, inferred_own = -1, slot = -1;
+    int had_raised, count = 0, result = 0;
+    char binding_record[160];
     uint64_t target = 0;
 
     if (first_device) *first_device = 0;
     if (disconnected) *disconnected = 0;
     if (!g_ready) return -1;
     for (i = 0; i < HOST_MAX_PADS; i++)
-        if (g_slot[i].st == VP_READY) { v = &g_slot[i]; break; }
+        if (g_slot[i].st == VP_READY) { v = &g_slot[i]; slot = i; break; }
     if (!v) {
         log_line("vpad: make-first skipped: no live virtual pad");
         return -1;
@@ -520,7 +560,10 @@ int vpad_make_first(const char *log_path, uint64_t *first_device, unsigned *disc
         log_line("vpad: make-first skipped: sceMbusDisconnectDevice is unavailable");
         return -2;
     }
-    n = latest_cim_pads(log_path, pads);
+    snprintf(binding_record, sizeof binding_record,
+             "slot %d: device %#llx bound to user %#x: 0",
+             slot, (unsigned long long)v->dev, (unsigned)g_user);
+    n = latest_cim_pads(log_path, pads, binding_record, &inferred_own);
     if (n <= 0) {
         log_line("vpad: make-first skipped: no recent CIM Pad table in the log");
         return -3;
@@ -528,6 +571,11 @@ int vpad_make_first(const char *log_path, uint64_t *first_device, unsigned *disc
     for (i = 0; i < n; i++)
         if (pads[i].device == v->dev && pads[i].user == (uint32_t)g_user)
             own = pads[i].index;
+    if (own < 0 && inferred_own >= 0) {
+        own = inferred_own;
+        log_line("vpad: make-first: current pad is bound after latest CIM table; inferred next free index %d",
+                 own);
+    }
     if (own < 0) {
         log_line("vpad: make-first skipped: latest CIM table does not identify our device %#llx for user %#x",
                  (unsigned long long)v->dev, (unsigned)g_user);
