@@ -74,6 +74,13 @@ body { margin: 0; min-height: 100vh; color: var(--ink);
 .btn.ps { border-color: rgba(200,255,61,.5); color: var(--lime); }
 .btn.hum { border-color: rgba(255,106,43,.6); color: #ffa37a; }
 .btn.cut { background: transparent; border-color: rgba(255,61,90,.5); color: #ff8094; }
+.mash { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.mash button { font: inherit; font-weight: 800; font-size: 14px; min-height: 44px; min-width: 64px; padding: 0 12px; cursor: pointer;
+  color: var(--ink); background: transparent; border: 2px solid var(--edge); }
+.mash button.on { color: var(--void); background: var(--lime); border-color: var(--lime); }
+.mashrow { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+.mashrow select { font: inherit; min-height: 44px; color: var(--ink); background: var(--card); border: 2px solid var(--edge); padding: 0 8px; }
+.btn.live-on { color: var(--void); background: var(--lime); border-color: var(--lime); }
 .btn.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
 .btn.small { min-height: 42px; padding: 0 14px; font-size: 13px; }
 
@@ -241,6 +248,16 @@ footer p { margin: 0 24px 0 0; color: var(--mute); font-size: 13px; max-width: 6
         <p class="note" data-i18n="gameFirstNote">If a game ignores PadBridge, this disconnects same-user controllers ahead of it. Press PS on a disconnected controller to reconnect it.</p>
         <button class="btn cut" id="makeFirst" data-i18n="makeFirst">Make PadBridge first</button>
       </div>
+      <div id="turboBox" hidden style="margin-top:18px">
+        <p class="label" data-i18n="turboTitle">Hold to mash</p>
+        <p class="note" data-i18n="turboNote">Hold a chosen button and PadBridge taps it for you, for doors, chests and fountains that ask for rapid presses. Turn it off for games where you hold those buttons.</p>
+        <div class="mash" id="turboButtons"></div>
+        <div class="mashrow">
+          <label for="turboHz" data-i18n="turboSpeed">Taps per second</label>
+          <select id="turboHz"></select>
+        </div>
+        <button class="btn" id="turboToggle">Off</button>
+      </div>
     </div>
     <div class="panel pair">
       <p class="label" data-i18n="pairing">Pairing</p>
@@ -305,6 +322,13 @@ I18N.en.makeFirstConfirm = "Disconnect controller(s)? Click again";
 I18N.en.makeFirstDone = "Controller order updated";
 I18N.en.makeFirstAlready = "PadBridge is already first";
 I18N.en.makeFirstFailed = "Could not verify controller order; see the log.";
+I18N.en.turboTitle = "Hold to mash";
+I18N.en.turboNote = "Hold a chosen button and PadBridge taps it for you, for doors, chests and fountains that ask for rapid presses. Turn it off for games where you hold those buttons.";
+I18N.en.turboSpeed = "Taps per second";
+I18N.en.turboOn = "Hold to mash: ON";
+I18N.en.turboOff = "Hold to mash: OFF";
+I18N.en.turboPick = "Choose at least one button first";
+I18N.en.turboSaved = "Hold to mash saved";
 var LS_LANG = "padbridge-lang", LANG = "en", langFromConsole = false, lastState = null;
 try { var saved = localStorage.getItem(LS_LANG); if (I18N[saved]) LANG = saved; } catch (e) {}
 function t(k, v) {
@@ -652,6 +676,45 @@ function render(s) {
   $("padsHint").textContent = s.combo ? t("hotkey", { c: s.combo }) : t("upTo4");
   renderPads(s.pads);
   renderPaired(s.paired, s.pads);
+  renderTurbo(s.turbo);
+}
+var TURBO_BUTTONS = [["cross","✕"],["circle","○"],["square","□"],["triangle","△"],["l1","L1"],["r1","R1"],["l2","L2"],["r2","R2"]];
+var turboState = null;
+function turboList(t) { return t && t.buttons ? t.buttons.split(",").filter(Boolean) : []; }
+function sendTurbo(on, list, hz) {
+  if (on && !list.length) { toast(t("turboPick")); return; }
+  api("POST", "/api/turbo?on=" + (on ? 1 : 0) + "&buttons=" + list.join(",") + "&hz=" + hz)
+    .then(function () { toast(t("turboSaved")); }, function () { toast(t("failed")); }).then(refresh);
+}
+function renderTurbo(tb) {
+  var box = $("turboBox");
+  if (!tb) { box.hidden = true; return; }
+  box.hidden = false;
+  turboState = tb;
+  var list = turboList(tb), wrap = $("turboButtons");
+  if (!wrap.childNodes.length) {
+    TURBO_BUTTONS.forEach(function (b) {
+      var e = el("button", "", b[1]);
+      e.type = "button"; e.title = b[0]; e.setAttribute("data-b", b[0]);
+      e.onclick = function () {
+        var l = turboList(turboState), i = l.indexOf(b[0]);
+        if (i >= 0) l.splice(i, 1); else l.push(b[0]);
+        sendTurbo(turboState.on && l.length > 0, l, turboState.hz);
+      };
+      wrap.appendChild(e);
+    });
+    var sel = $("turboHz");
+    for (var hz = tb.min; hz <= tb.max; hz++) { var o = el("option", "", String(hz)); o.value = hz; sel.appendChild(o); }
+    sel.onchange = function () { sendTurbo(turboState.on, turboList(turboState), +sel.value); };
+    $("turboToggle").onclick = function () { sendTurbo(!turboState.on, turboList(turboState), turboState.hz); };
+  }
+  Array.prototype.forEach.call(wrap.childNodes, function (e) {
+    e.className = list.indexOf(e.getAttribute("data-b")) >= 0 ? "on" : "";
+    e.setAttribute("aria-pressed", e.className ? "true" : "false");
+  });
+  if (document.activeElement !== $("turboHz")) $("turboHz").value = tb.hz;
+  $("turboToggle").textContent = t(tb.on ? "turboOn" : "turboOff");
+  $("turboToggle").className = "btn" + (tb.on ? " live-on" : "");
 }
 var inFlight = false;
 function refresh() {

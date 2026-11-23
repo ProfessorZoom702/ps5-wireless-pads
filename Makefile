@@ -8,7 +8,7 @@ PS5_HOST ?= ps5
 PS5_PORT ?= 9021
 
 CORE   := src/util.c src/log.c src/crc32.c src/smp_crypto.c src/profiles.c src/generic.c src/host.c src/le.c
-WEB    := src/web.c src/web_page.c src/i18n.c
+WEB    := src/web.c src/web_page.c src/i18n.c src/config.c src/turbo.c
 HOST_CFLAGS := -std=c11 -Wall -Wextra -Werror -O1 -g -Isrc -D_DEFAULT_SOURCE
 
 BUILD := build
@@ -48,11 +48,11 @@ $(BUILD)/test_le: $(CORE) tests/sim_le.c tests/test_le.c | $(BUILD)
 	cc $(HOST_CFLAGS) -o $@ $^
 
 # The console source for virtual pads, against stand-ins for the console's libraries.
-$(BUILD)/test_vpad: src/ps5_vpad.c src/log.c src/util.c tests/test_vpad.c | $(BUILD)
+$(BUILD)/test_vpad: src/ps5_vpad.c src/turbo.c src/config.c src/log.c src/util.c tests/test_vpad.c | $(BUILD)
 	cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isrc -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -o $@ $^
 
 # Configuration, the console hotkey and the local address.
-$(BUILD)/test_config: src/config.c src/hotkey.c src/netinfo.c src/log.c src/util.c tests/test_config.c | $(BUILD)
+$(BUILD)/test_config: src/config.c src/turbo.c src/hotkey.c src/netinfo.c src/log.c src/util.c tests/test_config.c | $(BUILD)
 	cc $(HOST_CFLAGS) -o $@ $^
 
 # The instance lock, and taking over from a running copy.

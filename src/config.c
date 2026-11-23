@@ -24,15 +24,15 @@ void config_defaults(padbridge_config *c)
     c->menu_hold_ms = 1500;
 }
 
-int config_parse_combo(const char *text, uint32_t *mask)
+static int parse_buttons(const char *text, uint32_t *mask, int min)
 {
-    char buf[96], *tok, *save = NULL;
+    char buf[160], *tok, *save = NULL;
     uint32_t m = 0;
     int n = 0;
 
     if (!text || strlen(text) >= sizeof buf) return 0;
     strcpy(buf, text);
-    for (tok = strtok_r(buf, "+ ", &save); tok; tok = strtok_r(NULL, "+ ", &save)) {
+    for (tok = strtok_r(buf, "+, ", &save); tok; tok = strtok_r(NULL, "+, ", &save)) {
         size_t i;
         char *p;
         for (p = tok; *p; p++) *p = (char)tolower((unsigned char)*p);
@@ -42,9 +42,33 @@ int config_parse_combo(const char *text, uint32_t *mask)
         if (!(m & k_buttons[i].bit)) n++;
         m |= k_buttons[i].bit;
     }
-    if (n < 2) return 0;
+    if (n < min) return 0;
     *mask = m;
     return 1;
+}
+
+int config_parse_combo(const char *text, uint32_t *mask)
+{
+    return parse_buttons(text, mask, 2);
+}
+
+int config_parse_buttons(const char *text, uint32_t *mask)
+{
+    return parse_buttons(text, mask, 1);
+}
+
+void config_buttons_key(uint32_t mask, char *out, size_t max)
+{
+    size_t i, n = 0;
+
+    if (max) out[0] = '\0';
+    for (i = 0; i < N_BUTTONS; i++) {
+        int w;
+        if (!(mask & k_buttons[i].bit)) continue;
+        w = snprintf(out + n, max - n, "%s%s", n ? "," : "", k_buttons[i].key);
+        if (w < 0 || (size_t)w >= max - n) break;
+        n += (size_t)w;
+    }
 }
 
 void config_combo_text(uint32_t mask, char *out, size_t max)

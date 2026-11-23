@@ -72,6 +72,7 @@
 #define PAIR_FLAG    STATE_DIR "/pair"
 #define STOP_FLAG    STATE_DIR "/stop"
 #define NO_ICON_FLAG STATE_DIR "/no_icon"          /* do not put PadBridge in the media row */
+#define TURBO_PATH   STATE_DIR "/turbo.ini"         /* hold to mash, set from the web page */
 #define LANG_PATH    STATE_DIR "/language"          /* the web page's language, also for notifications */
 #define RM_ICON_FLAG STATE_DIR "/remove_icon"      /* take it out, once */
 #define PAIR_SECONDS 60
@@ -181,6 +182,13 @@ static void on_state(void *ud, int slot, const pad_state *st)
 static int web_press_ps(int slot)
 {
     return g_vpad_ok && vpad_press_ps(slot, PS_HOLD_MS);
+}
+
+/* Hold to mash, as saved; the web page changes it. */
+static turbo_cfg g_turbo_cfg;
+static void on_turbo_changed(const turbo_cfg *c)
+{
+    vpad_set_turbo(c);
 }
 
 static void on_disconnect(void *ud, int slot)
@@ -376,6 +384,10 @@ int main(void)
     g_wc.log_path = LOG_PATH;
     g_wc.version = PADBRIDGE_VERSION;
     g_wc.press_ps = web_press_ps;
+    turbo_load(&g_turbo_cfg, TURBO_PATH);
+    g_wc.turbo = &g_turbo_cfg;
+    g_wc.turbo_path = TURBO_PATH;
+    g_wc.turbo_changed = on_turbo_changed;
     web_open(now_ms());
 
     sysinfo_log();
@@ -393,6 +405,8 @@ int main(void)
     /* Without virtual pads there is nothing to connect controllers to:
      * Bluetooth is not touched at all, and the menu says why. */
     g_vpad_ok = vpad_init();
+    vpad_set_turbo(&g_turbo_cfg);
+    if (g_turbo_cfg.on) log_line("hold to mash is on (%d per second)", g_turbo_cfg.hz);
     if (!g_vpad_ok) {
         g_bt_state = WEB_BT_FAILED;
         snprintf(g_bt_reason, sizeof g_bt_reason,

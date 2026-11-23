@@ -29,6 +29,12 @@ int config_load(padbridge_config *c, const char *path);
  * buttons are named. */
 int config_parse_combo(const char *text, uint32_t *mask);
 
+/* "r2,circle" (or "r2+circle") -> mask; at least one button. */
+int config_parse_buttons(const char *text, uint32_t *mask);
+
+/* Mask -> the names config files use, comma separated: "r2,circle". */
+void config_buttons_key(uint32_t mask, char *out, size_t max);
+
 /* Mask -> words for a person: "L2 + R2 + OPTIONS". */
 void config_combo_text(uint32_t mask, char *out, size_t max);
 

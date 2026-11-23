@@ -110,6 +110,8 @@ typedef struct {
     pad_state last;             /* the pad's latest state, resent while PS is held from the menu */
     long ps_until;              /* ms; PS is added to the frames until then (0: not held) */
     int ps_active;              /* a frame with PS went out and the release is still to be sent */
+    turbo_track turbo;          /* hold to mash: when the held mash buttons started */
+    int turbo_phase;            /* last mash phase sent: -1 none, 0 released, 1 pressed */
 } vslot;
 
 static mbus_bind_fn g_bind;
@@ -118,6 +120,8 @@ static int g_ready;                         /* vpad_init succeeded */
 static int32_t g_user = -1;
 static vslot g_slot[HOST_MAX_PADS];
 static void ps_tick(long now);
+static void turbo_tick(long now);
+static turbo_cfg g_turbo;                  /* hold to mash, off until set */
 
 /* The identification under way: one at a time, so a DEVICE_ADDED line can
  * only belong to the device just asked for. */
@@ -627,6 +631,7 @@ int vpad_add(int slot)
     if (!g_ready || slot < 0 || slot >= HOST_MAX_PADS) return 0;
     if (g_slot[slot].st != VP_FREE && g_slot[slot].st != VP_FAILED) return 0;
     memset(&g_slot[slot], 0, sizeof g_slot[slot]);
+    g_slot[slot].turbo_phase = -1;
     g_slot[slot].st = VP_QUEUED;
     g_slot[slot].handle = -1;
     return 1;
@@ -714,6 +719,7 @@ void vpad_poll(long now)
 
     if (!g_ready) return;
     ps_tick(now);
+    turbo_tick(now);
     if (g_pending >= 0) {
         log_source_read();
         finish_identification(now);
@@ -741,13 +747,16 @@ static void send_frame(int slot, const pad_state *st)
 
     if (!vpad_live(slot)) return;
     memset(&d, 0, sizeof d);
-    d.buttons = st->buttons | (g_slot[slot].ps_until ? PAD_PS : 0);
+    d.buttons = st->buttons;
     d.lx = st->lx;
     d.ly = st->ly;
     d.rx = st->rx;
     d.ry = st->ry;
     d.l2 = st->l2;
     d.r2 = st->r2;
+    g_slot[slot].turbo_phase = turbo_filter(&g_turbo, &g_slot[slot].turbo, now_ms(),
+                                            &d.buttons, &d.l2, &d.r2);
+    if (g_slot[slot].ps_until) d.buttons |= PAD_PS;
     d.orientation[3] = 1.0f;
     if (st->has_motion) {
         for (i = 0; i < 3; i++) {
@@ -809,6 +818,32 @@ static void ps_tick(long now)
         if (v->ps_until && now >= v->ps_until) v->ps_until = 0;       /* released */
         send_frame(i, &v->last);
         if (!v->ps_until) v->ps_active = 0;
+    }
+}
+
+/* Hold to mash: a Bluetooth pad sends nothing while a button is simply held,
+ * so the press/release frames are made here, each time the phase turns. */
+void vpad_set_turbo(const turbo_cfg *c)
+{
+    int i;
+
+    g_turbo = *c;
+    for (i = 0; i < HOST_MAX_PADS; i++) g_slot[i].turbo.since = 0;
+}
+
+static void turbo_tick(long now)
+{
+    int i;
+
+    for (i = 0; i < HOST_MAX_PADS; i++) {
+        vslot *v = &g_slot[i];
+        uint32_t b;
+        uint8_t l2, r2;
+        turbo_track t;
+        if (v->st != VP_READY || v->turbo_phase < 0) continue;
+        b = v->last.buttons; l2 = v->last.l2; r2 = v->last.r2; t = v->turbo;
+        if (turbo_filter(&g_turbo, &t, now, &b, &l2, &r2) != v->turbo_phase)
+            send_frame(i, &v->last);
     }
 }
 

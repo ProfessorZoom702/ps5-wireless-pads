@@ -2,6 +2,7 @@
 #include "../src/config.h"
 #include "../src/hotkey.h"
 #include "../src/netinfo.h"
+#include "../src/turbo.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -76,6 +77,48 @@ static void test_hotkey(void)
     CHECK(hotkey_update(&h, 1, combo, t + 5800));
 }
 
+static void test_turbo(void)
+{
+    turbo_cfg c;
+    turbo_track t = { 0 };
+    uint32_t b, m;
+    uint8_t l2 = 0, r2 = 200;
+    char names[64];
+    const char *path = "build/test_turbo.ini";
+
+    printf("turbo: parsing, phases, saving\n");
+    CHECK(config_parse_buttons("r2", &m) && m == PAD_R2);
+    CHECK(config_parse_buttons("R2,circle", &m) && m == (PAD_R2 | PAD_CIRCLE));
+    CHECK(!config_parse_buttons("", &m) && !config_parse_buttons("nope", &m));
+    config_buttons_key(PAD_R2 | PAD_CIRCLE, names, sizeof names);
+    CHECK(strcmp(names, "r2,circle") == 0);
+
+    turbo_defaults(&c);
+    CHECK(!c.on && c.hz == TURBO_HZ_DEFAULT);
+    CHECK(!turbo_set(&c, 1, 0, 10));                 /* on with no button: refused */
+    CHECK(!turbo_set(&c, 1, PAD_R2, 99));
+    CHECK(turbo_set(&c, 1, PAD_R2 | PAD_PS, 10) && c.mask == PAD_R2);
+
+    b = PAD_R2 | PAD_CROSS;                          /* 10/s: 50 ms pressed, 50 released */
+    CHECK(turbo_filter(&c, &t, 1000, &b, &l2, &r2) == 1 && b == (PAD_R2 | PAD_CROSS) && r2 == 200);
+    b = PAD_R2 | PAD_CROSS;
+    CHECK(turbo_filter(&c, &t, 1060, &b, &l2, &r2) == 0 && b == PAD_CROSS && r2 == 0);
+    b = PAD_R2 | PAD_CROSS; r2 = 200;
+    CHECK(turbo_filter(&c, &t, 1110, &b, &l2, &r2) == 1 && b == (PAD_R2 | PAD_CROSS));
+    b = PAD_CROSS;                                   /* let go: nothing changes */
+    CHECK(turbo_filter(&c, &t, 1160, &b, &l2, &r2) == -1 && b == PAD_CROSS && t.since == 0);
+    c.on = 0;
+    b = PAD_R2;
+    CHECK(turbo_filter(&c, &t, 1200, &b, &l2, &r2) == -1 && b == PAD_R2);
+
+    turbo_set(&c, 1, PAD_R2 | PAD_CIRCLE, 12);
+    CHECK(turbo_save(&c, path));
+    turbo_defaults(&c);
+    CHECK(turbo_load(&c, path) && c.on && c.mask == (PAD_R2 | PAD_CIRCLE) && c.hz == 12);
+    remove(path);
+    CHECK(turbo_load(&c, path) && !c.on);            /* missing file: off */
+}
+
 static void test_netinfo(void)
 {
     char ip[16];
@@ -90,6 +133,7 @@ int main(void)
 {
     test_config();
     test_hotkey();
+    test_turbo();
     test_netinfo();
     printf(g_fail ? "%d check(s) failed\n" : "all config checks passed\n", g_fail);
     return g_fail != 0;

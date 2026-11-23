@@ -21,6 +21,7 @@
 #define PH_PS5_VPAD_H
 
 #include "pad.h"
+#include "turbo.h"
 
 /* Raises this process's credentials (checked), loads MBus and libScePad.
  * Returns 0 if any step fails; virtual pads then stay off. */
@@ -38,6 +39,9 @@ int  vpad_live(int slot);
 int vpad_make_first(const char *log_path, uint64_t *first_device, unsigned *disconnected);
 
 void vpad_update(int slot, const pad_state *st);
+
+/* Hold to mash for every virtual pad (see turbo.h); takes effect at once. */
+void vpad_set_turbo(const turbo_cfg *c);
 
 /* Holds PS on the virtual pad for `ms` milliseconds (the menu's PS button).
  * 0 if the slot has no live virtual pad. */

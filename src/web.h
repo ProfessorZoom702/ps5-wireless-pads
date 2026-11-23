@@ -10,6 +10,7 @@
 #define PH_WEB_H
 
 #include "host.h"
+#include "turbo.h"
 
 #define WEB_PORT 8095
 
@@ -33,6 +34,11 @@ typedef struct {
     int (*physical)(uint32_t *buttons, int *err);
     /* Presses PS on pad `slot` (0-based). Returns 1 if done. NULL: not available. */
     int (*press_ps)(int slot);
+    /* Hold to mash: the settings shown and changed by POST /api/turbo, saved
+     * to turbo_path, and passed to turbo_changed. NULL turbo: not offered. */
+    turbo_cfg *turbo;
+    const char *turbo_path;
+    void (*turbo_changed)(const turbo_cfg *c);
 } web_cfg;
 
 /* Listens on `port` on every interface. Returns NULL if it cannot. */

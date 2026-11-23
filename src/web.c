@@ -1,4 +1,5 @@
 #include "web.h"
+#include "config.h"
 #include "i18n.h"
 #include "log.h"
 #include "profiles.h"
@@ -201,7 +202,14 @@ static void api_state(web_t *w, int fd)
                 PUT("%s\"%s\"", fb ? "" : ",", names[b].name);
                 fb = 0;
             }
-        PUT("]},\"pads\":[");
+        PUT("]},");
+        if (w->cfg.turbo) {
+            char tb[160];
+            config_buttons_key(w->cfg.turbo->mask, tb, sizeof tb);
+            PUT("\"turbo\":{\"on\":%s,\"buttons\":\"%s\",\"hz\":%d,\"min\":%d,\"max\":%d},",
+                w->cfg.turbo->on ? "true" : "false", tb, w->cfg.turbo->hz, TURBO_HZ_MIN, TURBO_HZ_MAX);
+        }
+        PUT("\"pads\":[");
     }
     for (i = 0; h && i < HOST_MAX_PADS; i++) {
         pad_info info;
@@ -263,6 +271,29 @@ static void api_log(web_t *w, int fd)
     respond(fd, 200, "text/plain; charset=utf-8", buf, n);
 }
 
+/* "a=1&b=x" -> the value of `key`; 0 if absent. Values are plain words here
+ * (button names, digits, commas), so no percent-decoding is needed beyond
+ * "%2C" for a comma a browser may send. */
+static int query(const char *q, const char *key, char *out, size_t max)
+{
+    size_t kl = strlen(key), n = 0;
+
+    while (q && *q) {
+        if (strncmp(q, key, kl) == 0 && q[kl] == '=') {
+            q += kl + 1;
+            while (*q && *q != '&' && n + 1 < max) {
+                if (q[0] == '%' && q[1] == '2' && (q[2] == 'C' || q[2] == 'c')) { out[n++] = ','; q += 3; }
+                else out[n++] = *q++;
+            }
+            out[n] = '\0';
+            return 1;
+        }
+        q = strchr(q, '&');
+        if (q) q++;
+    }
+    return 0;
+}
+
 static void handle(web_t *w, int fd, char *req)
 {
     char method[8], path[256], hostname[64], custom[8];
@@ -315,6 +346,27 @@ static void handle(web_t *w, int fd, char *req)
                      "{\"ok\":true,\"alreadyFirst\":false,\"disconnected\":%u,\"firstDevice\":\"0x%llx\"}",
                      disconnected, (unsigned long long)device);
             respond_text(fd, 200, body);
+        }
+    } else if (strcmp(method, "POST") == 0 && strncmp(path, "/api/turbo?", 11) == 0 && w->cfg.turbo) {
+        turbo_cfg c = *w->cfg.turbo;
+        char val[160];
+        uint32_t mask = c.mask;
+        int ok = 1;
+        if (query(path + 11, "buttons", val, sizeof val))
+            ok = !*val ? (mask = 0, 1) : config_parse_buttons(val, &mask);
+        if (ok && query(path + 11, "on", val, sizeof val)) c.on = atoi(val) ? 1 : 0;
+        if (ok && query(path + 11, "hz", val, sizeof val)) c.hz = atoi(val);
+        if (!ok || !turbo_set(&c, c.on, mask, c.hz)) {
+            respond_text(fd, 400, "{\"error\":\"turbo\"}");
+        } else {
+            char tb[160];
+            *w->cfg.turbo = c;
+            if (w->cfg.turbo_path && !turbo_save(&c, w->cfg.turbo_path))
+                log_line("web: could not save hold to mash in %s", w->cfg.turbo_path);
+            if (w->cfg.turbo_changed) w->cfg.turbo_changed(&c);
+            config_buttons_key(c.mask, tb, sizeof tb);
+            log_line("web: hold to mash %s, buttons %s, %d per second", c.on ? "on" : "off", tb[0] ? tb : "none", c.hz);
+            respond_text(fd, 200, "{\"ok\":true}");
         }
     } else if (strcmp(method, "POST") == 0 && strncmp(path, "/api/forget?addr=", 17) == 0 && h) {
         unsigned char a[6];
